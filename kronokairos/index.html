@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Kronokairos</title>
+  <meta name="theme-color" content="#2d48d6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1118" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Kronokairos">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Kronokairos</h1>
+    <div class="app-header-actions">
+      <button type="button" id="ai-btn" class="secondary">Fill in with AI</button>
+      <button type="button" id="add-btn">+ Add subject</button>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Main">
+    <div class="tabs-inner">
+      <button type="button" class="tab" data-screen="today">Today</button>
+      <button type="button" class="tab" data-screen="schedule">Schedule</button>
+      <button type="button" class="tab" data-screen="links">Links</button>
+      <button type="button" class="tab" data-screen="settings">Settings</button>
+    </div>
+  </nav>
+
+  <main id="screen" class="app-main"></main>
+
+  <footer class="app-footer">
+    <p>Your schedule is saved only on this device.</p>
+    <button type="button" id="how-btn" class="link-btn">How it works and limits</button>
+  </footer>
+
+  <noscript><p class="app-main">Kronokairos needs JavaScript to run.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
