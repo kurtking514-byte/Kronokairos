@@ -1,7 +1,7 @@
 // Schedule: Monday to Saturday timetable with coloured blocks sized by class length.
 
 import { DAYS, findOverlaps, endTime, to12h, joinUrl } from "../model.js";
-import { el, ensureStyles, openAddScreen, textOn } from "./shared.js";
+import { el, ensureStyles, openAddScreen, openAiScreen, textOn } from "./shared.js";
 import { openEditor } from "./subjectForm.js";
 
 const PX_PER_HOUR = 56;
@@ -44,14 +44,21 @@ export function render(container, state) {
   container.append(root);
   root.append(el("h2", "", "Schedule"));
 
+  // Adding classes lives here (it used to be in the header).
+  const actions = el("div", "p1-row sched-actions");
+  const add = el("button", "p1-btn primary", "+ Add a class");
+  add.type = "button";
+  add.addEventListener("click", openAddScreen);
+  const ai = el("button", "p1-btn", "Fill in with AI");
+  ai.type = "button";
+  ai.addEventListener("click", openAiScreen);
+  actions.append(add, ai);
+  root.append(actions);
+
   const subjects = state.subjects.filter((s) => TIME_OK.test(s.start) && Number.isInteger(s.minutes));
   if (subjects.length === 0) {
     const box = el("div", "p1-card");
-    box.append(el("p", "", "Your timetable is empty. Add a class to see it here."));
-    const add = el("button", "p1-btn primary", "Add a class");
-    add.type = "button";
-    add.addEventListener("click", openAddScreen);
-    box.append(add);
+    box.append(el("p", "", "Your timetable is empty. Add a class, or fill it in from a screenshot with AI."));
     root.append(box);
     return;
   }

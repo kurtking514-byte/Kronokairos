@@ -37,6 +37,15 @@ function sanitize(raw) {
   };
 }
 
+// Text from a backup file (js/backup.js): a clean state, or null if it isn't one of ours.
+export function parseState(text) {
+  try {
+    return sanitize(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
 export function loadState() {
   try {
     const text = store()?.getItem(KEY);

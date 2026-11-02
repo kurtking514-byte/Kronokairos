@@ -1,12 +1,12 @@
 // Add / edit a subject, by tapping. Other screens open it with openEditor(id).
 
-import { DAYS, newSubject, validateSubject, findOverlaps, to12h } from "../model.js";
+import { DAYS, newSubject, validateSubject, findOverlaps } from "../model.js";
 import { saveState } from "../storage.js";
 import { parseInvite } from "../invite.js";
-import { el, ensureStyles, goTo, currentScreen, openAddScreen, textOn } from "./shared.js";
+import { el, ensureStyles, goTo, currentScreen, openAddScreen } from "./shared.js";
+import { timeButton } from "./clockPicker.js";
 
 const NAME_CHIPS = ["Math", "English", "History", "PathFit", "Science", "Filipino", "PE"];
-const LENGTH_CHIPS = [60, 70, 80, 90, 120];
 const COLORS = [
   { hex: "#3b82f6", name: "Blue" }, { hex: "#ef4444", name: "Red" }, { hex: "#22c55e", name: "Green" },
   { hex: "#f59e0b", name: "Amber" }, { hex: "#a855f7", name: "Purple" }, { hex: "#ec4899", name: "Pink" },
@@ -51,6 +51,7 @@ export function render(container, state) {
   const draft = existing ? { ...existing, days: [...existing.days] } : newSubject({ days: [] });
   let tried = false;
   let confirmDelete = false;
+  let colorOpen = false; // is the colour picker showing?
   let pasteOpen = false; // is the Paste invite box showing?
   let pasteText = "";    // what the student has pasted so far
   let pasteNote = null;  // { kind: "ok" | "error", text } shown under the Paste invite button
@@ -65,11 +66,10 @@ export function render(container, state) {
   }
 
   function btn(label, key, onClick, extra = "", pressed) {
-    const b = el("button", `p1-btn ${extra}`.trim(), (pressed ? "✓ " : "") + label);
+    const b = el("button", `p1-btn ${extra}`.trim(), label);
     b.type = "button";
     b.dataset.k = key;
     if (pressed !== undefined) b.setAttribute("aria-pressed", String(pressed));
-    if (pressed) b.setAttribute("aria-label", label); // so the tick mark is not read aloud
     b.addEventListener("click", onClick);
     return b;
   }
@@ -92,23 +92,40 @@ export function render(container, state) {
     return input;
   }
 
+  // Subject name (with suggestions) and a small colour button on the same row.
   function nameSection() {
     const wrap = el("div", "p1-field");
-    wrap.append(el("span", "p1-label", "Subject"));
-    const chips = group(el("div", "p1-row"), "Common subject names");
-    for (const n of NAME_CHIPS) {
-      chips.append(btn(n, `name-${n}`, () => { draft.name = n; redraw(`name-${n}`); }, "", draft.name === n));
-    }
-    wrap.append(chips);
+    const label = el("label", "", "Subject");
+    label.htmlFor = "f-name";
     const input = textInput("name");
-    wrap.append(field("Or type a name", "f-name", input));
+    input.id = "f-name";
+    input.placeholder = "e.g. Math";
+    input.autocapitalize = "words";
+    input.setAttribute("list", "f-names");
+    const names = el("datalist");
+    names.id = "f-names";
+    for (const n of NAME_CHIPS) {
+      const o = el("option");
+      o.value = n;
+      names.append(o);
+    }
+    const current = COLORS.find((c) => c.hex === draft.color)?.name ?? "Custom";
+    const colorBtn = btn("", "color-toggle", () => { colorOpen = !colorOpen; redraw("color-toggle"); });
+    colorBtn.className = "f-color-btn";
+    colorBtn.style.setProperty("--swatch", draft.color);
+    colorBtn.setAttribute("aria-label", `Color: ${current}. Change color`);
+    colorBtn.setAttribute("aria-expanded", String(colorOpen));
+    const row = el("div", "f-name-row");
+    row.append(input, colorBtn);
+    wrap.append(label, row, names);
+    if (colorOpen) wrap.append(colorSection());
     return wrap;
   }
 
   function daysSection() {
     const wrap = el("div", "p1-field");
     wrap.append(el("span", "p1-label", "Days"));
-    const row = group(el("div", "p1-row"), "Days");
+    const row = group(el("div", "seg"), "Days");
     for (const d of DAYS) { // Mon to Sat only. There is no Sunday.
       const on = draft.days.includes(d);
       row.append(btn(d, `day-${d}`, () => {
@@ -121,51 +138,59 @@ export function render(container, state) {
   }
 
   function timeSection() {
-    const input = textInput("start", "", "time");
-    const hint = TIME_OK.test(draft.start) ? `Starts at ${to12h(draft.start)}` : "";
-    return field("Start time", "f-start", input, hint);
+    const wrap = el("div", "p1-field");
+    const label = el("label", "", "Start time");
+    label.htmlFor = "f-start";
+    const { button } = timeButton("f-start", draft.start, (v) => { draft.start = v; redraw("f-start"); });
+    button.dataset.k = "f-start";
+    wrap.append(label, button);
+    return wrap;
   }
 
+  // Length in minutes: type it, or nudge it by 5.
   function lengthSection() {
     const wrap = el("div", "p1-field");
-    wrap.append(el("span", "p1-label", "Length"));
-    const chips = group(el("div", "p1-row"), "Common lengths in minutes");
-    for (const m of LENGTH_CHIPS) {
-      const chip = btn(String(m), `len-${m}`, () => { draft.minutes = m; redraw(`len-${m}`); }, "", draft.minutes === m);
-      chip.setAttribute("aria-label", `${m} minutes`);
-      chips.append(chip);
-    }
-    wrap.append(chips);
-    const step = el("div", "p1-row");
+    const label = el("label", "", "Length (min)");
+    label.htmlFor = "f-minutes";
+    const input = el("input", "");
+    input.id = "f-minutes";
+    input.type = "number";
+    input.inputMode = "numeric";
+    input.min = "10";
+    input.max = "300";
+    input.step = "5";
+    input.value = Number.isInteger(draft.minutes) ? String(draft.minutes) : "";
+    input.dataset.k = "len-input";
+    input.addEventListener("input", () => {
+      const n = Math.round(Number(input.value));
+      draft.minutes = input.value.trim() && Number.isFinite(n) ? n : "";
+    });
     const shown = Number.isInteger(draft.minutes) ? draft.minutes : 0;
-    const minus = btn("− 5", "len-minus", () => { draft.minutes = Math.max(10, shown - 5); redraw("len-minus"); });
+    const minus = btn("−", "len-minus", () => { draft.minutes = Math.max(10, shown - 5); redraw("len-minus"); });
     minus.setAttribute("aria-label", "5 minutes shorter");
-    const plus = btn("+ 5", "len-plus", () => { draft.minutes = Math.min(300, (shown || 55) + 5); redraw("len-plus"); });
+    const plus = btn("+", "len-plus", () => { draft.minutes = Math.min(300, (shown || 55) + 5); redraw("len-plus"); });
     plus.setAttribute("aria-label", "5 minutes longer");
-    step.append(minus, el("strong", "", `${shown} minutes`), plus);
-    wrap.append(step);
+    const stepper = el("div", "stepper");
+    stepper.append(minus, input, plus);
+    wrap.append(label, stepper);
     return wrap;
   }
 
   function colorSection() {
-    const wrap = el("div", "p1-field");
-    wrap.append(el("span", "p1-label", "Color"));
-    const row = group(el("div", "p1-row"), "Color");
+    const row = group(el("div", "f-colors"), "Color");
     const options = COLORS.some((c) => c.hex === draft.color) ? COLORS : [...COLORS, { hex: draft.color, name: "Current" }];
     for (const c of options) {
       const on = draft.color === c.hex;
-      const b = el("button", "p1-swatch", on ? "✓" : "");
+      const b = el("button", "p1-swatch");
       b.type = "button";
       b.dataset.k = `color-${c.hex}`;
       b.style.background = c.hex;
-      b.style.color = textOn(c.hex);
       b.setAttribute("aria-label", c.name);
       b.setAttribute("aria-pressed", String(on));
-      b.addEventListener("click", () => { draft.color = c.hex; redraw(`color-${c.hex}`); });
+      b.addEventListener("click", () => { draft.color = c.hex; colorOpen = false; redraw("color-toggle"); });
       row.append(b);
     }
-    wrap.append(row);
-    return wrap;
+    return row;
   }
 
   const FIELD_NAMES = { link: "Zoom link", meetingId: "Meeting ID", passcode: "Passcode" };
@@ -198,32 +223,23 @@ export function render(container, state) {
     redraw("paste-note");
   }
 
-  function pasteSection() {
-    const wrap = el("div", "p1-field");
-    const open = btn("Paste invite", "paste", () => {
-      pasteOpen = !pasteOpen;
-      pasteNote = null;
-      redraw(pasteOpen ? "paste-text" : "paste");
-    });
-    open.setAttribute("aria-expanded", String(pasteOpen));
-    wrap.append(open);
-
+  function pastePanel() {
+    const wrap = el("div", "f-paste");
     if (pasteOpen) {
       const box = noAutoFix(el("textarea", "p1-input p1-mono"));
-      box.rows = 6;
-      box.style.padding = "8px 10px";
+      box.rows = 5;
       box.value = pasteText;
       box.dataset.k = "paste-text";
+      box.placeholder = "Paste the teacher's whole Zoom invite here";
+      box.setAttribute("aria-label", "Teacher's Zoom invite");
       box.addEventListener("input", () => { pasteText = box.value; });
-      wrap.append(field("Paste the teacher's Zoom invite here", "f-paste", box));
       const row = el("div", "p1-row");
       row.append(
         btn("Fill in details", "paste-go", fillFromInvite, "primary"),
         btn("Close", "paste-close", () => { pasteOpen = false; pasteNote = null; redraw("paste"); }),
       );
-      wrap.append(row);
+      wrap.append(box, row);
     }
-
     if (pasteNote) {
       const p = el("p", `p1-msg${pasteNote.kind === "error" ? " error" : ""}`, pasteNote.text);
       p.setAttribute("role", pasteNote.kind === "error" ? "alert" : "status");
@@ -236,13 +252,29 @@ export function render(container, state) {
 
   function zoomSection() {
     const frag = document.createDocumentFragment();
+    const head = el("div", "f-section");
+    const paste = btn(pasteOpen ? "Hide paste box" : "Paste invite", "paste", () => {
+      pasteOpen = !pasteOpen;
+      pasteNote = null;
+      redraw(pasteOpen ? "paste-text" : "paste");
+    }, "ghost");
+    paste.setAttribute("aria-expanded", String(pasteOpen));
+    head.append(el("h3", "", "Zoom"), paste);
+
+    const link = noAutoFix(textInput("link", "", "url"));
+    link.placeholder = "https://zoom.us/j/…";
     const idInput = noAutoFix(textInput("meetingId"));
     idInput.inputMode = "numeric";
+    idInput.placeholder = "9–11 digits";
+    const pass = noAutoFix(textInput("passcode", "p1-mono"));
+    const pair = el("div", "f-pair");
+    pair.append(field("Meeting ID", "f-id", idInput), field("Passcode", "f-pass", pass));
     frag.append(
-      pasteSection(),
-      field("Zoom link", "f-link", noAutoFix(textInput("link", "", "url"))),
-      field("Meeting ID", "f-id", idInput, "Digits only, 9 to 11 of them."),
-      field("Passcode", "f-pass", noAutoFix(textInput("passcode", "p1-mono")), "Copy it exactly. Capital and small letters matter."),
+      head,
+      pastePanel(),
+      field("Zoom link", "f-link", link),
+      pair,
+      el("p", "f-hint", "Passcodes are case-sensitive. Copy them exactly."),
     );
     return frag;
   }
@@ -263,7 +295,7 @@ export function render(container, state) {
       p.setAttribute("role", "alert");
       out.push(p);
     }
-    for (const w of warnings) out.push(el("p", "p1-msg", `Note: ${w}`));
+    if (tried) for (const w of warnings) out.push(el("p", "p1-msg", `Note: ${w}`)); // not on a blank form
     if (TIME_OK.test(draft.start) && Number.isInteger(draft.minutes) && draft.days.length) {
       const others = state.subjects.filter((s) => !existing || s.id !== existing.id);
       for (const o of findOverlaps([...others, draft]).filter((x) => x.a === draft || x.b === draft)) {
@@ -300,7 +332,7 @@ export function render(container, state) {
   }
 
   function deleteArea() {
-    const area = el("div", "p1-row");
+    const area = el("div", "p1-row f-delete");
     if (!confirmDelete) {
       area.append(btn("Delete this class", "delete", () => { confirmDelete = true; redraw("delete-yes"); }, "danger"));
       return area;
@@ -318,21 +350,22 @@ export function render(container, state) {
     return area;
   }
 
+  // Full-screen form: Cancel and Save sit in a top bar, so nothing important is below the fold.
   function build() {
     const form = el("form", "");
     form.noValidate = true;
     form.addEventListener("submit", (e) => { e.preventDefault(); save(); });
-    const actions = el("div", "p1-row");
+    const bar = el("div", "form-bar");
     const saveBtn = btn("Save", "save", () => {}, "primary");
     saveBtn.type = "submit";
-    actions.append(saveBtn, btn("Cancel", "cancel", () => goTo(back)));
-    form.append(
-      nameSection(), daysSection(), timeSection(), lengthSection(), colorSection(), zoomSection(),
-      ...messages(), actions,
-    );
-    const nodes = [el("h2", "", existing ? "Edit class" : "Add a class"), form];
-    if (existing) nodes.push(deleteArea());
-    return nodes;
+    bar.append(btn("Cancel", "cancel", () => goTo(back), "ghost"), el("h2", "", existing ? "Edit class" : "Add a class"), saveBtn);
+    const body = el("div", "form-body");
+    const when = el("div", "f-pair");
+    when.append(timeSection(), lengthSection());
+    body.append(...messages(), nameSection(), daysSection(), when, zoomSection());
+    if (existing) body.append(deleteArea());
+    form.append(bar, body);
+    return [form];
   }
 
   redraw();

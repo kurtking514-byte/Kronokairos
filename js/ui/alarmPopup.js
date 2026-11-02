@@ -1,6 +1,8 @@
 // Phase 4. The alarm popup, its sound, and the "Start alarms" control + status chip.
 // Browsers block sound until the student taps the page, so the Start alarms tap
 // (and the Test alarm tap) call unlockAudio() first.
+// Started alarms stay on across visits (ALARMS_KEY). After a reload they come back on by
+// themselves, and the first tap anywhere on the page turns the sound back on.
 
 import { onAlarm, snooze, startAlarms, stopAlarms, alarmsRunning } from "../alarms.js";
 import { joinUrl, to12h, endTime } from "../model.js";
@@ -8,11 +10,12 @@ import { loadState, onChange } from "../storage.js";
 
 let latestState = null;
 let wired = false;
-let styleAdded = false;
 let audioCtx = null;
 let soundTimer = null;
 let soundStartedAt = 0;
 let overlay = null; // the popup that is open right now
+let shownBox = null; // the Today screen's controls, repainted when the sound unlocks
+const ALARMS_KEY = "kronokairos.alarms"; // "on" once the student starts alarms, gone after Stop
 const queue = []; // alarms waiting behind it
 
 // ---------- tiny helpers ----------
@@ -28,29 +31,6 @@ function h(tag, props = {}, ...kids) {
   }
   for (const kid of kids.flat()) if (kid != null) e.append(kid);
   return e;
-}
-
-const STYLE = `
-.alarm-controls { display: grid; gap: 8px; margin-block: var(--space); }
-.alarm-chip { display: inline-block; width: fit-content; padding: 4px 12px; border-radius: 999px; font-weight: 700; border: 2px solid var(--muted); }
-.alarm-chip.on { border-color: var(--primary); color: var(--primary); }
-.alarm-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.alarm-note { color: var(--muted); font-size: 0.9rem; margin: 0; }
-.alarm-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: var(--space); background: var(--bg); overflow: auto; }
-.alarm-panel { width: 100%; max-width: 520px; display: grid; gap: var(--space); text-align: center; background: var(--surface); border-radius: var(--radius); padding: calc(var(--space) * 1.5); border-top: 10px solid var(--primary); }
-.alarm-panel p { margin: 0; max-width: none; }
-.alarm-kind { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-.alarm-name { font-size: 2rem; margin: 0; overflow-wrap: anywhere; }
-.alarm-count { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-a.alarm-join { display: flex; align-items: center; justify-content: center; min-height: 72px; font-size: 1.5rem; font-weight: 700; border-radius: var(--radius); background: var(--primary); color: var(--bg); text-decoration: none; }
-.alarm-pass { font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; font-size: 1.25rem; letter-spacing: 0.05em; }
-.alarm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-`;
-
-function injectStyles() {
-  if (styleAdded) return;
-  styleAdded = true;
-  document.head.append(h("style", { text: STYLE }));
 }
 
 // ---------- sound (Web Audio, no audio files) ----------
@@ -146,7 +126,6 @@ function handleAlarm(alarm) {
 }
 
 function openOverlay(alarm) {
-  injectStyles();
   // An open dialog (import preview, welcome) sits above everything and would hide the alarm.
   for (const dlg of document.querySelectorAll("dialog[open]")) dlg.close();
   const { subject, startsAt, kind } = alarm;
@@ -245,14 +224,23 @@ async function copyPasscode(text, status) {
 }
 
 // Optional extra: a system notification if the page is in the background.
-function notifyIfHidden(alarm) {
+// Android Chrome refuses `new Notification()` from a page, so it goes through the service worker
+// (sw.js opens the app when the notification is tapped). Plain Notification is the fallback.
+async function notifyIfHidden(alarm) {
   try {
     if (!document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
     const what = alarm.kind === "early" ? "starts soon" : "is starting";
-    const n = new Notification(`${alarm.subject.name || "Class"} ${what}`, {
+    const title = `${alarm.subject.name || "Class"} ${what}`;
+    const options = {
       tag: `kronokairos-${alarm.subject.id}`,
-      body: "Open Kronokairos to join.",
-    });
+      body: "Tap to open Kronokairos and join.",
+      icon: "icons/icon-192.png",
+      requireInteraction: true, // stays until the student sees it
+      vibrate: [200, 100, 200],
+    };
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    if (reg?.showNotification) return await reg.showNotification(title, options);
+    const n = new Notification(title, options);
     n.onclick = () => { window.focus(); n.close(); };
   } catch {
     /* some phones do not allow this from a page: the popup still works */
@@ -268,6 +256,47 @@ function askForNotifications() {
   }
 }
 
+// ---------- staying on across visits ----------
+
+function wantAlarms() {
+  try {
+    return localStorage.getItem(ALARMS_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+function rememberAlarms(on) {
+  try {
+    if (on) localStorage.setItem(ALARMS_KEY, "on");
+    else localStorage.removeItem(ALARMS_KEY);
+  } catch {
+    // Storage is blocked: alarms just need a Start tap again next visit.
+  }
+}
+
+const soundReady = () => audioCtx?.state === "running";
+
+// The first tap or key press anywhere wakes the sound (browsers only allow it inside one).
+function unlockOnFirstTouch() {
+  const events = ["pointerdown", "keydown"];
+  const once = () => {
+    unlockAudio();
+    events.forEach((type) => document.removeEventListener(type, once, true));
+    // resume() settles a moment later: repaint once the sound is really on
+    setTimeout(() => { if (shownBox?.isConnected) paint(shownBox); }, 100);
+  };
+  events.forEach((type) => document.addEventListener(type, once, true));
+}
+
+// Called once when the app opens: turn alarms back on if the student left them on.
+export function resumeAlarms() {
+  if (!wantAlarms() || alarmsRunning()) return;
+  wireOnce();
+  startAlarms(() => latestState ?? loadState());
+  unlockOnFirstTouch();
+}
+
 // ---------- the Start alarms control (used by the Today screen) ----------
 
 function wireOnce() {
@@ -281,12 +310,14 @@ function onStart(box) {
   unlockAudio(); // must happen inside this tap
   askForNotifications();
   wireOnce();
+  rememberAlarms(true);
   startAlarms(() => latestState ?? loadState());
   paint(box);
 }
 
 function onStop(box) {
   stopAlarms();
+  rememberAlarms(false);
   paint(box);
 }
 
@@ -302,8 +333,12 @@ function onTest(box) {
 function paint(box) {
   const on = alarmsRunning();
   const hasSound = !!(window.AudioContext || window.webkitAudioContext);
-  box.replaceChildren(
-    h("span", { class: `alarm-chip ${on ? "on" : "off"}`, role: "status", text: on ? "● Alarms on" : "○ Alarms off, tap to start" }),
+  const hasClasses = (latestState?.subjects?.length ?? 0) > 0;
+  box.classList.toggle("is-off", !on && hasClasses); // styles.css: a loud red warning, hard to miss
+  box.replaceChildren(...[
+    h("span", { class: `alarm-chip ${on ? "on" : "off"}`, role: "status", text: on ? "Alarms on" : "Alarms off" }),
+    !on && hasClasses ? h("p", { class: "alarm-warn", text: "Your classes won't ring. Tap Start alarms." }) : null,
+    on && hasSound && !soundReady() ? h("p", { class: "alarm-warn", text: "Sound is off. Tap anywhere on the page to turn it on." }) : null,
     h("div", { class: "alarm-row" },
       on
         ? h("button", { type: "button", class: "secondary", text: "Stop alarms", onclick: () => onStop(box) })
@@ -311,14 +346,14 @@ function paint(box) {
       h("button", { type: "button", class: "secondary", text: "Test alarm", onclick: () => onTest(box) })),
     h("p", { class: "alarm-note", text: "The page must stay open. For alarms when the page is closed, use Add to my calendar." }),
     ...(hasSound ? [] : [h("p", { class: "alarm-note", text: "This browser can't play the alarm sound. The popup will still appear." })]),
-  );
+  ].filter(Boolean));
 }
 
 // The Today screen calls this with a small empty container.
 export function render(container, state) {
-  injectStyles();
   latestState = state;
   wireOnce();
+  shownBox = container;
   container.classList.add("alarm-controls");
   paint(container);
 }

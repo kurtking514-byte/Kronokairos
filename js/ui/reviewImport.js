@@ -4,7 +4,8 @@
 
 import { PROMPT, parseReply } from "../aiImport.js";
 import { parseInvite } from "../invite.js";
-import { DAYS, validateSubject, findOverlaps, to12h, joinUrl, newSubject } from "../model.js";
+import { DAYS, validateSubject, findOverlaps, joinUrl, newSubject } from "../model.js";
+import { timeButton } from "./clockPicker.js";
 import { saveState } from "../storage.js";
 
 const PALETTE = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
@@ -17,7 +18,6 @@ function readableOn(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.18 ? "#000" : "#fff";
 }
 const NAME_SUGGESTIONS = ["Math", "English", "History", "PathFit", "Science"];
-const LENGTH_CHOICES = [60, 70, 80, 90, 120];
 const FIELD_KEYS = ["name", "days", "start", "minutes", "link", "meetingId", "passcode"];
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -314,7 +314,6 @@ function buildCard(d) {
   c.title = h("h3", { text: d.name || "Unnamed subject" });
   c.status = h("p", { role: "status", class: "ai-note" });
   c.msgs = h("ul", { class: "ai-msgs", "aria-live": "polite" });
-  c.time12 = h("span", { class: "ai-note" });
 
   const removeBtn = h("button", {
     type: "button", class: "secondary danger-text", text: "Remove",
@@ -331,13 +330,13 @@ function buildCard(d) {
     c.status,
     textField(c, "name", "Subject name", { attrs: { autocapitalize: "words", list: "ai-names" } }),
     daysField(c),
-    timeField(c),
-    minutesField(c),
+    h("div", { class: "ai-pair" }, timeField(c), minutesField(c)),
     colorField(c),
     inviteBlock(c),
     textField(c, "link", "Zoom link", { attrs: { inputmode: "url", autocapitalize: "off", spellcheck: "false" } }),
-    textField(c, "meetingId", "Meeting ID (9 to 11 digits)", { attrs: { inputmode: "numeric", autocapitalize: "off" } }),
-    textField(c, "passcode", "Passcode", { mono: true, attrs: { autocapitalize: "off", autocorrect: "off", spellcheck: "false" } }),
+    h("div", { class: "ai-pair" },
+      textField(c, "meetingId", "Meeting ID", { attrs: { inputmode: "numeric", autocapitalize: "off", placeholder: "9–11 digits" } }),
+      textField(c, "passcode", "Passcode", { mono: true, attrs: { autocapitalize: "off", autocorrect: "off", spellcheck: "false" } })),
     h("p", { class: "ai-note", text: "Compare with the original post. Letters like l, I, 0, and O are easy to mix up." }),
     c.msgs,
   );
@@ -404,13 +403,13 @@ function textField(c, key, label, { mono = false, attrs = {} } = {}) {
 }
 
 function daysField(c) {
-  const row = h("div", { class: "ai-chips" });
+  const row = h("div", { class: "seg" });
   for (const day of DAYS) {
     const on = () => c.d.days.includes(day);
     const btn = h("button", { type: "button", class: "secondary ai-chip", "aria-pressed": String(on()), "aria-label": day });
     const paint = () => {
       btn.setAttribute("aria-pressed", String(on()));
-      btn.textContent = on() ? `✓ ${day}` : day;
+      btn.textContent = day;
     };
     paint();
     btn.addEventListener("click", () => {
@@ -426,14 +425,13 @@ function daysField(c) {
 
 function timeField(c) {
   const id = `ai-${c.d.id}-start`;
-  const input = h("input", { id, type: "time", step: "60", value: isTime(c.d.start) ? c.d.start : "" });
-  input.addEventListener("input", () => {
-    c.d.start = input.value; // always "HH:MM" 24-hour, or "" when cleared
+  const picker = timeButton(id, c.d.start, (v) => {
+    c.d.start = v; // always "HH:MM" 24-hour
     clearMissing(c.d, "start");
     refreshAll();
   });
-  c.inputs.start = input;
-  return makeField(c, "start", "Start time", h("div", { class: "ai-actions" }, input, c.time12), { forId: id });
+  c.time12 = picker; // updateCard keeps its label in step with the draft
+  return makeField(c, "start", "Start time", picker.button, { forId: id });
 }
 
 function minutesField(c) {
@@ -460,17 +458,12 @@ function minutesField(c) {
   });
   c.inputs.minutes = input;
 
-  const chips = LENGTH_CHOICES.map((n) =>
-    h("button", { type: "button", class: "secondary ai-chip", text: String(n), "aria-label": `${n} minutes`, onclick: () => set(n) }));
-  const control = h("div", { class: "ai-minutes-wrap" },
-    h("div", { class: "ai-minutes" },
-      h("button", { type: "button", class: "secondary", text: "−", "aria-label": "5 minutes shorter", onclick: () => step(-5) }),
-      input,
-      h("button", { type: "button", class: "secondary", text: "+", "aria-label": "5 minutes longer", onclick: () => step(5) }),
-    ),
-    h("div", { class: "ai-chips" }, chips),
+  const control = h("div", { class: "ai-minutes" },
+    h("button", { type: "button", class: "secondary", text: "−", "aria-label": "5 minutes shorter", onclick: () => step(-5) }),
+    input,
+    h("button", { type: "button", class: "secondary", text: "+", "aria-label": "5 minutes longer", onclick: () => step(5) }),
   );
-  return makeField(c, "minutes", "Length in minutes", control, { forId: id });
+  return makeField(c, "minutes", "Length (min)", control, { forId: id });
 }
 
 function colorField(c) {
@@ -483,7 +476,7 @@ function colorField(c) {
     const paint = () => {
       const on = c.d.color === color;
       btn.setAttribute("aria-pressed", String(on));
-      btn.textContent = on ? "✓" : "";
+      btn.textContent = "";
       btn.style.color = readableOn(color);
       btn.style.textShadow = "none";
     };
@@ -556,7 +549,7 @@ function updateCard(c, overlaps) {
     c.fields[key].wrap.classList.toggle("missing", missing);
     c.fields[key].badge.hidden = !missing;
   }
-  c.time12.textContent = isTime(d.start) ? to12h(d.start) : "";
+  c.time12.set(d.start);
   c.title.textContent = d.name.trim() || "Unnamed subject";
   // Several cards share these buttons, so each one names its subject.
   c.testBtn.setAttribute("aria-label", `Test join for ${c.title.textContent}`);

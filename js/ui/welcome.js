@@ -1,6 +1,8 @@
 // First-run welcome (Phase 8): a small dialog with three quick steps.
 // Shown once, only when there are no classes, and never over a share-link import.
 
+import { openAiScreen } from "./shared.js";
+
 const SEEN_KEY = "kronokairos.welcome"; // separate from the schedule data
 let shownThisVisit = false;
 
@@ -54,7 +56,7 @@ function buildDialog() {
   start.type = "button";
   start.addEventListener("click", () => {
     dialog.close();
-    document.getElementById("ai-btn")?.click(); // same button as the header
+    openAiScreen(start);
   });
   const later = el("button", "secondary", "Not now");
   later.type = "button";
@@ -66,7 +68,7 @@ function buildDialog() {
     title,
     el("p", "", "Get to your online classes on time in three quick steps."),
     steps,
-    el("p", "muted", "Your schedule is saved only on this device."),
+    el("p", "muted", "Your schedule is saved only on this device. Kronokairos never uploads or shares it on its own."),
     actions,
   );
   // Closing by any route (buttons or the Escape key) counts as "seen".

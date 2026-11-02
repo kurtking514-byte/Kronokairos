@@ -32,7 +32,6 @@ function classCount(n) {
 // ===================== Share button (Settings) =====================
 
 export function renderShareSection(container, state) {
-  ensureStyles();
   const section = el("section", "share-section");
   section.setAttribute("aria-labelledby", "share-heading");
   const heading = el("h3", "", "Share with a classmate");
@@ -162,7 +161,6 @@ export async function checkShareLink() {
 
 // One close path for every outcome: cancel, Esc, done, error. It always removes the hash.
 function openDialog() {
-  ensureStyles();
   const dlg = document.createElement("dialog");
   dlg.className = "share-dialog";
   dlg.setAttribute("aria-labelledby", "share-dlg-title");
@@ -304,47 +302,4 @@ function doImport(dlg, incoming, mode) {
   done.focus();
 }
 
-// ===================== Styles =====================
 
-function ensureStyles() {
-  if (document.getElementById("share-styles")) return;
-  const style = document.createElement("style");
-  style.id = "share-styles";
-  style.textContent = `
-    .share-section { margin-top: calc(var(--space, 16px) * 1.5); padding: var(--space, 16px);
-      background: var(--surface, transparent); border-radius: var(--radius, 12px); }
-    .share-section h3 { margin: 0 0 8px; }
-    .share-section p { margin: 0 0 8px; }
-    .share-muted { color: var(--muted, #555); }
-    .share-warning { font-weight: 600; }
-    .share-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-    .share-primary, .share-secondary { min-height: 44px; padding: 0 16px; font: inherit; cursor: pointer;
-      border: 2px solid var(--primary, #2563eb); border-radius: var(--radius, 12px); }
-    .share-primary { background: var(--primary, #2563eb); color: var(--bg, #fff); font-weight: 600; }
-    .share-secondary { background: transparent; color: var(--text, inherit); }
-    .share-small { margin-top: 8px; }
-    .share-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .share-section button:focus-visible, .share-dialog button:focus-visible,
-    .share-link:focus-visible, .share-dialog h2:focus-visible { outline: 3px solid var(--text, #000); outline-offset: 2px; }
-    .share-section label { display: block; margin-top: 8px; font-weight: 600; }
-    .share-link { box-sizing: border-box; width: 100%; min-height: 44px; margin-top: 4px; padding: 0 8px; font: inherit; }
-
-    .share-dialog { box-sizing: border-box; width: min(92vw, 560px); max-height: 85vh; overflow-y: auto;
-      padding: var(--space, 16px); color: var(--text, inherit); background: var(--bg, Canvas);
-      border: 2px solid var(--primary, #2563eb); border-radius: var(--radius, 12px); }
-    .share-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
-    .share-dialog h2 { margin: 0 0 8px; }
-    .share-dialog h2:focus { outline: none; }
-    .share-dialog p { margin: 0 0 8px; }
-    .share-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
-    .share-item { padding: 12px; background: var(--surface, transparent); border-radius: var(--radius, 12px);
-      border: 1px solid var(--muted, #888); overflow-wrap: anywhere; }
-    .share-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-    .share-swatch { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--text, #000); }
-    .share-line { margin: 0 0 4px; }
-    .share-secret { margin-top: 8px; }
-    .share-actions { display: grid; gap: 8px; margin-top: 12px; }
-    .share-actions p { margin: 0; }
-  `;
-  document.head.append(style);
-}

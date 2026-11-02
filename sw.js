@@ -2,7 +2,7 @@
 // To ship an update: change a file, then change CACHE_VERSION below. Old caches are deleted.
 // Every path is relative, so this works in a GitHub Pages subfolder.
 
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v34";
 const CACHE = `kronokairos-${CACHE_VERSION}`;
 
 // Every file the app needs. If you add a file to the project, add it here too.
@@ -11,10 +11,13 @@ const APP_FILES = [
   "index.html",
   "manifest.webmanifest",
   "css/styles.css",
+  "fonts/BarlowCondensed-BlackItalic.ttf",
+  "fonts/BarlowCondensed-SemiBoldItalic.ttf",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "icons/maskable-512.png",
   "icons/apple-touch-icon.png",
+  "icons/logo.svg",
   "js/app.js",
   "js/pwa.js",
   "js/model.js",
@@ -35,6 +38,10 @@ const APP_FILES = [
   "js/ui/welcome.js",
   "js/ui/alarmPopup.js",
   "js/ui/shared.js",
+  "js/ui/menu.js",
+  "js/motion.js",
+  "js/backup.js",
+  "js/ui/clockPicker.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -90,3 +97,14 @@ async function answer(request) {
     return new Response("Offline", { status: 503, statusText: "Offline" });
   }
 }
+
+// An alarm notification (js/ui/alarmPopup.js) was tapped: bring the open app forward, or open it.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const app = open.find((c) => c.url.startsWith(self.registration.scope));
+    if (app) return app.focus();
+    return self.clients.openWindow(self.registration.scope);
+  })());
+});

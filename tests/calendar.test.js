@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { defaultState, newSubject } from "../js/model.js";
-import { buildICS, downloadICS, escapeText, foldLine } from "../js/calendar.js";
+import { buildICS, downloadICS, escapeText, foldLine, calendarFingerprint, calendarStatus } from "../js/calendar.js";
 
 export const tests = [];
 const t = (name, fn) => tests.push([name, fn]);
@@ -139,6 +139,45 @@ t("DTSTART, DTEND and UNTIL are floating (no Z, no TZID)", () => {
   assert.match(prop(ev, "DTEND"), /^\d{8}T\d{6}$/);
   assert.match(prop(ev, "RRULE"), /UNTIL=\d{8}T\d{6}$/);
 });
+// ---------- time zone (the real download pins classes to the device's zone) ----------
+const zoneBlock = (ics) => {
+  const ls = logical(ics);
+  return ls.slice(ls.indexOf("BEGIN:VTIMEZONE"), ls.indexOf("END:VTIMEZONE") + 1);
+};
+t("with a time zone, DTSTART and DTEND carry its TZID and UNTIL is in UTC", () => {
+  const ev = first(buildICS(stateWith(subj()), NOW, "America/New_York"));
+  const lines = eventOnly(ev);
+  assert.ok(lines.includes("DTSTART;TZID=America/New_York:20261026T073000"), lines.join("\n"));
+  assert.ok(lines.includes("DTEND;TZID=America/New_York:20261026T085000"));
+  assert.match(prop(ev, "RRULE"), /UNTIL=\d{8}T\d{6}Z$/);
+});
+t("with a time zone, a VTIMEZONE for it comes before the events", () => {
+  const ics = buildICS(stateWith(subj()), NOW, "America/New_York");
+  const ls = logical(ics);
+  assert.ok(ls.indexOf("TZID:America/New_York") > -1);
+  assert.ok(ls.indexOf("END:VTIMEZONE") < ls.indexOf("BEGIN:VEVENT"));
+});
+t("the zone block includes a daylight-saving change inside the term", () => {
+  const z = zoneBlock(buildICS(stateWith(subj()), NOW, "America/New_York"));
+  // New York starts on summer time (-4) and falls back to -5 at 2 AM on 1 Nov 2026.
+  assert.equal(z[2], "BEGIN:DAYLIGHT");
+  assert.ok(z.includes("TZOFFSETTO:-0400"));
+  const i = z.indexOf("DTSTART:20261101T020000");
+  assert.ok(i > 0, z.join("\n"));
+  assert.equal(z[i + 1], "TZOFFSETFROM:-0400");
+  assert.equal(z[i + 2], "TZOFFSETTO:-0500");
+});
+t("a zone with no daylight saving has a single fixed offset", () => {
+  const z = zoneBlock(buildICS(stateWith(subj()), NOW, "Asia/Manila"));
+  assert.equal(z.filter((l) => l.startsWith("BEGIN:STANDARD") || l.startsWith("BEGIN:DAYLIGHT")).length, 1);
+  assert.ok(z.includes("TZOFFSETTO:+0800"));
+});
+t("an unknown time zone falls back to floating times instead of a broken file", () => {
+  const ics = buildICS(stateWith(subj()), NOW, "Not/AZone");
+  assert.ok(!ics.includes("VTIMEZONE"));
+  assert.equal(prop(first(ics), "DTSTART"), "20261026T073000");
+  assert.ok(!eventOnly(first(ics)).some((l) => l.startsWith("DTSTART;")));
+});
 t("DTSTAMP is written in UTC", () => {
   assert.equal(prop(first(buildICS(stateWith(subj()), NOW)), "DTSTAMP"), "20261026T041500Z");
 });
@@ -188,6 +227,10 @@ t("a blank name falls back to Class", () => {
 t("URL is the invite link", () => {
   assert.equal(prop(first(buildICS(stateWith(subj()), NOW)), "URL"), "https://example.test/j/123456789?pwd=FAKE");
 });
+t("LOCATION also holds the join link, so Google Calendar and Outlook show it", () => {
+  assert.equal(prop(first(buildICS(stateWith(subj()), NOW)), "LOCATION"), "https://example.test/j/123456789?pwd=FAKE");
+  assert.equal(prop(first(buildICS(stateWith(subj({ link: "" })), NOW)), "LOCATION"), "https://zoom.us/j/123456789");
+});
 t("URL falls back to zoom.us with the meeting ID", () => {
   const ev = first(buildICS(stateWith(subj({ link: "" })), NOW));
   assert.equal(prop(ev, "URL"), "https://zoom.us/j/123456789");
@@ -195,6 +238,7 @@ t("URL falls back to zoom.us with the meeting ID", () => {
 t("subject with no link and no meeting ID has no URL and no DESCRIPTION", () => {
   const ev = first(buildICS(stateWith(subj({ link: "", meetingId: "", passcode: "" })), NOW));
   assert.equal(prop(ev, "URL"), undefined);
+  assert.equal(prop(ev, "LOCATION"), undefined);
   assert.equal(prop(ev, "DESCRIPTION"), undefined);
   assert.equal(prop(ev, "SUMMARY"), "[Class] Math");
 });
@@ -343,4 +387,33 @@ t("downloadICS creates a Blob and clicks a link named kronokairos.ics", async ()
     URL.createObjectURL = realCreate;
     URL.revokeObjectURL = realRevoke;
   }
+});
+
+// ---------- is the phone calendar still right? ----------
+const savedFor = (state) => ({ key: calendarFingerprint(state), subjects: state.subjects.map(({ id, name }) => ({ id, name })) });
+t("calendar status: no classes, never downloaded, then current", () => {
+  assert.equal(calendarStatus(stateWith([]), null).kind, "empty");
+  const s = stateWith(subj({ id: "m1", name: "Math" }));
+  assert.equal(calendarStatus(s, null).kind, "never");
+  assert.equal(calendarStatus(s, savedFor(s)).kind, "current");
+});
+t("calendar status: editing a time, a link or the term makes it stale", () => {
+  const s = stateWith(subj({ id: "m1" }));
+  const saved = savedFor(s);
+  assert.equal(calendarStatus({ ...s, subjects: [{ ...s.subjects[0], start: "09:00" }] }, saved).kind, "stale");
+  assert.equal(calendarStatus({ ...s, subjects: [{ ...s.subjects[0], link: "https://zoom.us/j/1" }] }, saved).kind, "stale");
+  assert.equal(calendarStatus({ ...s, settings: { ...s.settings, termType: "trimester" } }, saved).kind, "stale");
+});
+t("calendar status: a colour change or reordering does not count", () => {
+  const a = subj({ id: "a1", name: "Math" }), b = subj({ id: "b2", name: "Art" });
+  const s = stateWith([a, b]);
+  const saved = savedFor(s);
+  assert.equal(calendarStatus({ ...s, subjects: [b, { ...a, color: "#ff0000" }] }, saved).kind, "current");
+});
+t("calendar status: a deleted class is named so it can be removed from the phone", () => {
+  const a = subj({ id: "a1", name: "Math" }), b = subj({ id: "b2", name: "Art" });
+  const saved = savedFor(stateWith([a, b]));
+  const now = calendarStatus(stateWith([a]), saved);
+  assert.equal(now.kind, "stale");
+  assert.deepEqual(now.removed, ["Art"]);
 });

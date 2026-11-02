@@ -1,8 +1,10 @@
 // Settings screen (Phase 1) + the "Add to my calendar" section (Phase 5B, below).
 
-import { buildICS, downloadICS } from "../calendar.js";
+import { buildICS, downloadICS, calendarStatus, savedCalendar } from "../calendar.js";
 import { saveState, resetAll } from "../storage.js";
 import { renderShareSection } from "./shareImport.js"; // Phase 6B
+import { getMotion, setMotion, getPageChange, setPageChange } from "../motion.js";
+import { downloadBackup, readBackup, lastBackupAt } from "../backup.js";
 
 const ALARM_CHOICES = [
   { value: 0, label: "At class time" },
@@ -10,6 +12,14 @@ const ALARM_CHOICES = [
   { value: 10, label: "10 min early" },
 ];
 const SNOOZE_CHOICES = [3, 5, 10, 15].map((n) => ({ value: n, label: `${n} min` }));
+const MOTION_CHOICES = [
+  { value: "device", label: "Follow device" },
+  { value: "full", label: "Always on" },
+];
+const PAGE_CHOICES = [
+  { value: "circles", label: "Blob reveal" },
+  { value: "slide", label: "Simple slide" },
+];
 const TERM_CHOICES = [
   { value: "trimester", label: "Trimester (13 weeks)" },
   { value: "semester", label: "Semester (18 weeks)" },
@@ -17,7 +27,6 @@ const TERM_CHOICES = [
 ];
 
 export function render(container, state) {
-  ensureStyles();
   const h = el("h2", "", "Settings");
   const note = el("p", "cal-muted", "Your schedule is saved only on this device. We don't store your links or passcodes.");
   container.append(h, note);
@@ -31,12 +40,67 @@ export function render(container, state) {
     card("Snooze", "Snooze length", SNOOZE_CHOICES, state.settings.snoozeMinutes,
       (v) => change({ snoozeMinutes: v })),
     keepScreenCard(state, change),
+    motionCard(),
+    pageChangeCard(),
     termCard(state, change),
+    backupCard(state),
     resetCard(),
   );
 
   renderCalendarSection(container, state); // Phase 5B
   renderShareSection(container, state); // Phase 6B
+  placeThumbs(container);
+  if (jumpToCalendar) {
+    jumpToCalendar = false;
+    requestAnimationFrame(() => container.querySelector("#cal-heading")?.closest("section")?.scrollIntoView({ block: "start" }));
+  }
+}
+
+// Today's "add to your phone calendar" card opens Settings at the calendar part.
+let jumpToCalendar = false;
+export function showCalendarNext() {
+  jumpToCalendar = true;
+}
+
+// The white highlight behind the picked choice slides to a new pick. It is a white layer holding
+// dark copies of the words, cut to the highlight's shape, so whatever it covers reads dark on white
+// and everything else light on dark, even halfway through the slide. A save redraws the whole
+// screen, so remember where each group's highlight was and glide it from there.
+const litAt = new Map(); // group label -> clip inset
+// All the changes first, then all the measuring in one go, then the moves: measuring between
+// changes made the browser redo the page layout once per row, which made page changes lag.
+function placeThumbs(root) {
+  const rows = [];
+  for (const group of root.querySelectorAll(".cal-choices[aria-label]")) {
+    const key = group.getAttribute("aria-label");
+    const on = group.querySelector(':scope > .cal-choice[aria-pressed="true"]');
+    group.querySelector(".cal-lit")?.remove();
+    if (!on) continue;
+    group.classList.add("has-lit"); // measure inside the group
+    const lit = el("div", "cal-lit");
+    lit.setAttribute("aria-hidden", "true");
+    lit.inert = true;
+    for (const btn of group.querySelectorAll(".cal-choice")) {
+      const copy = btn.cloneNode(true);
+      copy.removeAttribute("id");
+      copy.tabIndex = -1;
+      lit.append(copy);
+    }
+    const from = litAt.get(key);
+    lit.style.clipPath = from ?? "inset(50%)";
+    group.append(lit);
+    rows.push({ key, group, on, lit, from });
+  }
+  for (const row of rows) {
+    const { group, on } = row;
+    const t = on.offsetTop, l = on.offsetLeft;
+    row.to = `inset(${t}px ${group.clientWidth - l - on.offsetWidth}px ${group.clientHeight - t - on.offsetHeight}px ${l}px round 999px)`;
+  }
+  for (const { key, lit, from, to } of rows) {
+    litAt.set(key, to);
+    if (from && from !== to) lit.classList.add("is-moving"); // the measuring above already drew it at the old place
+    lit.style.clipPath = to;
+  }
 }
 
 // A titled box holding one row of tap choices.
@@ -53,7 +117,7 @@ function choiceGroup(label, choices, selected, onPick) {
   group.setAttribute("aria-label", label);
   for (const choice of choices) {
     const on = selected === choice.value;
-    const btn = el("button", "cal-choice", (on ? "\u2713 " : "") + choice.label);
+    const btn = el("button", "cal-choice", choice.label);
     btn.type = "button";
     btn.setAttribute("aria-pressed", String(on));
     btn.addEventListener("click", () => onPick(choice.value));
@@ -74,6 +138,28 @@ function keepScreenCard(state, change) {
   return section;
 }
 
+// Saved on this device only, outside the schedule, so it applies at once without a redraw.
+function motionCard() {
+  const section = card("Animations", "Animations", MOTION_CHOICES, getMotion(), (v) => {
+    setMotion(v);
+    for (const b of section.querySelectorAll(".cal-choice")) b.setAttribute("aria-pressed", String(b.dataset.value === v));
+    placeThumbs(section);
+  }, "Menu effects, the spinning clock and page changes. Follow device turns most of them off when your device asks for less motion.");
+  section.querySelectorAll(".cal-choice").forEach((b, i) => (b.dataset.value = MOTION_CHOICES[i].value));
+  return section;
+}
+
+// Also saved on this device only. "Simple slide" skips the circles for anyone they make dizzy.
+function pageChangeCard() {
+  const section = card("Page changes", "Page changes", PAGE_CHOICES, getPageChange(), (v) => {
+    setPageChange(v);
+    for (const b of section.querySelectorAll(".cal-choice")) b.setAttribute("aria-pressed", String(b.dataset.value === v));
+    placeThumbs(section);
+  }, "Blob reveal grows the next page out of what you tapped. Simple slide just slides the page in.");
+  section.querySelectorAll(".cal-choice").forEach((b, i) => (b.dataset.value = PAGE_CHOICES[i].value));
+  return section;
+}
+
 function termCard(state, change) {
   const { termType, termEndDate } = state.settings;
   const section = card("Term length", "Term length", TERM_CHOICES, termType,
@@ -90,6 +176,64 @@ function termCard(state, change) {
     section.append(label);
     if (!termEndDate) section.append(el("p", "cal-muted", "Pick a date. Until you do, Semester is used."));
   }
+  return section;
+}
+
+// The schedule lives only in this browser, which can clear it. A backup file can bring it back,
+// here or on a new phone. Restoring asks first, because it replaces what is here now.
+function backupCard(state) {
+  const section = el("section", "cal-section");
+  section.append(el("h3", "", "Backup"));
+  const last = lastBackupAt();
+  const when = last ? new Date(last) : null;
+  section.append(el("p", "cal-muted", when
+    ? `Last backup saved ${MONTHS[when.getMonth()]} ${when.getDate()}, ${when.getFullYear()}.`
+    : "No backup yet. Browsers can clear saved sites, so keep a copy of your schedule."));
+  const area = el("div", "");
+  const status = el("p", "cal-muted");
+  status.setAttribute("role", "status");
+
+  const save = el("button", "cal-choice", "Save a backup");
+  save.type = "button";
+  save.disabled = state.subjects.length === 0;
+  save.addEventListener("click", () => {
+    downloadBackup(state);
+    status.textContent = "Saved. Keep the file somewhere safe, like your Files or Drive.";
+  });
+
+  const picker = el("input", "");
+  picker.type = "file";
+  picker.accept = ".json,application/json";
+  picker.hidden = true;
+  const restore = el("button", "cal-choice", "Restore a backup");
+  restore.type = "button";
+  restore.addEventListener("click", () => picker.click());
+  picker.addEventListener("change", async () => {
+    const next = await readBackup(picker.files?.[0]);
+    picker.value = "";
+    if (!next) {
+      status.textContent = "That file isn't a Kronokairos backup.";
+      return;
+    }
+    const count = (n) => `${n} ${n === 1 ? "class" : "classes"}`;
+    const warn = el("p", "", `Replace the ${count(state.subjects.length)} here with the ${count(next.subjects.length)} in the backup?`);
+    warn.setAttribute("role", "alert");
+    const yes = el("button", "cal-choice", "Yes, restore");
+    yes.type = "button";
+    yes.addEventListener("click", () => saveState(next));
+    const no = el("button", "cal-choice", "Cancel");
+    no.type = "button";
+    no.addEventListener("click", () => area.replaceChildren(row));
+    const confirm = el("div", "cal-choices");
+    confirm.append(yes, no);
+    area.replaceChildren(warn, confirm);
+    yes.focus?.();
+  });
+
+  const row = el("div", "cal-choices");
+  row.append(save, restore, picker);
+  area.append(row);
+  section.append(area, status);
   return section;
 }
 
@@ -129,6 +273,25 @@ const LEAD_CHOICES = [
   { minutes: 10, label: "10 min before" },
 ];
 
+// Does the phone calendar still match? (calendar.js remembers what the last download held.)
+function calendarCheck(state) {
+  const box = el("div", "cal-check");
+  const { kind, removed } = calendarStatus(state, savedCalendar());
+  if (kind === "current") {
+    box.append(el("p", "cal-ok", "Your phone calendar matches your classes."));
+  } else if (kind === "stale") {
+    const warn = el("p", "cal-stale", "Your phone calendar is out of date. You changed your classes after you last added them. " +
+      "Tap Add to my calendar again, then delete the old Kronokairos events.");
+    warn.setAttribute("role", "alert");
+    box.append(warn);
+  }
+  if (kind !== "empty" && kind !== "never" && removed.length) {
+    box.append(el("p", "cal-stale", `You removed ${removed.join(", ")}. Delete ${removed.length === 1 ? "it" : "them"} ` +
+      "from your phone calendar too, or the reminders keep coming."));
+  }
+  return box;
+}
+
 // Kept outside render() so the device notes stay open after the screen redraws.
 let downloaded = false;
 
@@ -162,39 +325,6 @@ function previewCalendar(state) {
   return { events, until };
 }
 
-function ensureStyles() {
-  if (document.getElementById("cal-section-styles")) return;
-  const style = document.createElement("style");
-  style.id = "cal-section-styles";
-  style.textContent = `
-    .cal-section { margin-top: calc(var(--space, 16px) * 1.5); padding: var(--space, 16px);
-      background: var(--surface, transparent); border-radius: var(--radius, 12px); }
-    .cal-section h3, .cal-section h4 { margin: 0 0 8px; }
-    .cal-section p { margin: 0 0 8px; }
-    .cal-muted { color: var(--muted, #555); }
-    .cal-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-    .cal-choice, .cal-primary { min-height: 44px; padding: 0 16px; font: inherit; cursor: pointer;
-      color: var(--text, inherit); background: transparent;
-      border: 2px solid var(--primary, #2563eb); border-radius: var(--radius, 12px); }
-    .cal-choice[aria-pressed="true"] { background: var(--primary, #2563eb); color: var(--bg, #fff); font-weight: 600; }
-    .cal-primary { width: 100%; margin-top: 8px; background: var(--primary, #2563eb); color: var(--bg, #fff); font-weight: 600; }
-    .cal-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .cal-section button:focus-visible { outline: 3px solid var(--text, #000); outline-offset: 2px; }
-    .cal-devices { margin: 8px 0 0; }
-    .cal-devices dt { font-weight: 600; margin-top: 12px; }
-    .cal-devices dd { margin: 4px 0 0; overflow-wrap: anywhere; }
-    .set-row { display: flex; align-items: center; gap: 12px; min-height: 44px; }
-    .set-col { flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 8px; }
-    .set-row input[type="checkbox"] { width: 24px; height: 24px; flex: none; }
-    .set-date { min-height: 44px; font: inherit; padding: 0 8px; }
-    .set-danger { min-height: 44px; padding: 0 16px; font: inherit; cursor: pointer; background: transparent;
-      color: var(--danger, #dc2626); border: 2px solid var(--danger, #dc2626); border-radius: var(--radius, 12px); }
-    .set-danger-solid { background: var(--danger, #dc2626); color: var(--bg, #fff); font-weight: 600; }
-    .cal-tips { margin: 8px 0 0; padding-left: 20px; }
-    .cal-tips li { margin-bottom: 6px; }
-  `;
-  document.head.append(style);
-}
 
 function earlyWarningControls(state) {
   const group = el("div", "cal-choices");
@@ -203,7 +333,7 @@ function earlyWarningControls(state) {
   const selected = currentLead(state.settings);
   for (const choice of LEAD_CHOICES) {
     const on = selected === choice.minutes;
-    const btn = el("button", "cal-choice", (on ? "✓ " : "") + choice.label);
+    const btn = el("button", "cal-choice", choice.label);
     btn.type = "button";
     btn.setAttribute("aria-pressed", String(on));
     btn.addEventListener("click", () => {
@@ -218,7 +348,8 @@ function earlyWarningControls(state) {
 function deviceNotes() {
   const notes = [
     ["iPhone / Mac", "Calendar opens. Tap Add All. The alarms come with the events."],
-    ["Android", "Opens in Google Calendar or Samsung Calendar. Google Calendar may ignore alarms in imported files. " +
+    ["Android", "Samsung Calendar opens the file. If your phone has only Google Calendar and nothing opens it, " +
+      "import the file at calendar.google.com on a computer (Settings, Import). Google Calendar may ignore the alarms in the file. " +
       "One-time fix: open Google Calendar, go to Settings, and set a default notification at the start of the event."],
     ["Windows", "Opens in Outlook or Windows Calendar. Confirm to add the events."],
   ];
@@ -228,7 +359,6 @@ function deviceNotes() {
 }
 
 function renderCalendarSection(container, state) {
-  ensureStyles();
   const { events, until } = previewCalendar(state);
   const hasSubjects = state.subjects.length > 0;
   const canExport = events > 0;
@@ -260,6 +390,8 @@ function renderCalendarSection(container, state) {
     }
   }
   section.append(summary);
+  let check = calendarCheck(state);
+  section.append(check);
 
   if (hasSubjects) {
     section.append(el("p", "", "Early warning"), earlyWarningControls(state),
@@ -280,6 +412,9 @@ function renderCalendarSection(container, state) {
     downloadICS(state);
     downloaded = true;
     status.textContent = "kronokairos.ics was downloaded. Open it to add your classes.";
+    const fresh = calendarCheck(state);
+    check.replaceWith(fresh);
+    check = fresh;
     notes.hidden = false;
     notes.scrollIntoView?.({ block: "nearest" });
   });
@@ -288,7 +423,8 @@ function renderCalendarSection(container, state) {
   const tips = el("ul", "cal-tips");
   tips.append(
     el("li", "", "Calendar notifications can be quiet. Set a loud alarm in your phone's clock app too."),
-    el("li", "", "If your schedule changes, tap Add to my calendar again and delete the old events."),
+    el("li", "", "Adding is a one-time copy: your phone calendar doesn't update by itself. " +
+      "If your classes change, this page tells you to add them again."),
   );
   section.append(el("h4", "", "Tips"), tips);
 

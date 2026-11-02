@@ -224,7 +224,8 @@ t("termEnd custom without a date falls back to semester", () => {
 const CONTRACT = {
   "../js/model.js": ["DAYS", "TERM_WEEKS", "defaultState", "newSubject", "validateSubject", "findOverlaps",
     "to12h", "endTime", "dayName", "classesOn", "nextClass", "joinUrl", "termEnd"],
-  "../js/storage.js": ["loadState", "saveState", "onChange", "resetAll"],
+  "../js/storage.js": ["loadState", "saveState", "onChange", "resetAll", "parseState"],
+  "../js/backup.js": ["keepStorage", "backupDue", "downloadBackup", "readBackup"],
   "../js/invite.js": ["parseInvite"],
   "../js/aiImport.js": ["PROMPT", "parseReply"],
   "../js/calendar.js": ["buildICS", "downloadICS"],

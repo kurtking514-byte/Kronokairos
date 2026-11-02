@@ -1,9 +1,59 @@
 // Today: classes in time order, with a live countdown on the current or next one.
 
-import { classesOn, dayName, endTime, to12h, joinUrl } from "../model.js";
+import { classesOn, dayName, endTime, to12h, joinUrl, nextClass } from "../model.js";
 import { render as renderAlarmControls } from "./alarmPopup.js"; // Phase 4
-import { el, ensureStyles, copyText, openAddScreen, DAY_LONG, MONTHS } from "./shared.js";
+import { el, ensureStyles, copyText, openAddScreen, openScreen, DAY_LONG, MONTHS } from "./shared.js";
 import { openEditor } from "./subjectForm.js";
+import { backupDue, storageKept, downloadBackup } from "../backup.js";
+import { calendarStatus, savedCalendar } from "../calendar.js";
+import { showCalendarNext } from "./settings.js";
+
+const CAL_NUDGE_KEY = "kronokairos.calendarNudge"; // when "Not now" was tapped on the calendar card (ms)
+const CAL_NUDGE_DAYS = 14;
+
+function calendarNudgeHidden() {
+  try {
+    const at = Number(localStorage.getItem(CAL_NUDGE_KEY));
+    return Number.isFinite(at) && at > 0 && Date.now() - at < CAL_NUDGE_DAYS * 86400000;
+  } catch {
+    return false;
+  }
+}
+
+// The page alarms only ring while the app is open; the phone calendar rings when it's closed.
+// Ask once the student has classes, and speak up when the calendar no longer matches.
+function calendarCard(state) {
+  const { kind, removed } = calendarStatus(state, savedCalendar());
+  const stale = kind === "stale" || (kind === "current" && removed.length > 0);
+  if (!stale && !(kind === "never" && !calendarNudgeHidden())) return null;
+  const card = el("div", "p1-card cal-nudge" + (stale ? " is-stale" : ""));
+  card.append(el("p", "", stale
+    ? "Your phone calendar is out of date. Your classes changed after you added them, so it may remind you at the wrong times."
+    : "Get reminders even when this app is closed: add your classes to your phone calendar. It takes one tap."));
+  const row = el("div", "p1-row");
+  const open = el("button", "p1-btn primary", stale ? "Update my calendar" : "Add to my calendar");
+  open.type = "button";
+  open.addEventListener("click", () => {
+    showCalendarNext();
+    openScreen("settings", open);
+  });
+  row.append(open);
+  if (!stale) {
+    const later = el("button", "p1-btn", "Not now");
+    later.type = "button";
+    later.addEventListener("click", () => {
+      try {
+        localStorage.setItem(CAL_NUDGE_KEY, String(Date.now()));
+      } catch {
+        // Storage blocked: the card shows again next visit.
+      }
+      card.remove();
+    });
+    row.append(later);
+  }
+  card.append(row);
+  return card;
+}
 
 let timer = null;
 
@@ -42,6 +92,26 @@ export function render(container, state) {
   root.append(alarmBox); // Phase 4
   renderAlarmControls(alarmBox, state); // Phase 4
 
+  const calCard = calendarCard(state);
+  if (calCard) root.append(calCard);
+
+  // A month without a backup, and the browser may clear the data: say so (js/backup.js).
+  const backupBox = el("div", "");
+  root.append(backupBox);
+  storageKept().then((kept) => {
+    if (!backupDue(state, kept) || !backupBox.isConnected) return;
+    const card = el("div", "p1-card backup-nudge");
+    card.append(el("p", "", "Your schedule is saved only in this browser, which can clear it. Save a backup file to be safe."));
+    const save = el("button", "p1-btn", "Save a backup");
+    save.type = "button";
+    save.addEventListener("click", () => {
+      downloadBackup(state);
+      card.remove();
+    });
+    card.append(save);
+    backupBox.append(card);
+  });
+
   const list = el("div", "");
   root.append(list);
 
@@ -62,7 +132,23 @@ export function render(container, state) {
     } else {
       box.append(el("p", "", "No classes today. Enjoy the break."));
     }
+    const next = nextUp();
+    if (next) box.append(next);
     return box;
+  }
+
+  // "Next: Math, tomorrow at 7:30 AM", for when nothing is left today.
+  function nextUp() {
+    const now = new Date();
+    const found = nextClass(state, now);
+    if (!found) return null;
+    const { subject, startsAt } = found;
+    const days = Math.round((new Date(startsAt).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86400000);
+    const when = days === 0 ? "later today" : days === 1 ? "tomorrow"
+      : `${DAY_LONG[dayName(startsAt)]}, ${MONTHS[startsAt.getMonth()]} ${startsAt.getDate()}`;
+    const p = el("p", "p1-next");
+    p.append("Next: ", el("strong", "", subject.name), ` · ${when} at ${to12h(subject.start)}`);
+    return p;
   }
 
   function classCard(subject, status, index, highlight) {
@@ -131,7 +217,13 @@ export function render(container, state) {
       const cards = classes.length
         ? classes.map((c, i) => classCard(c, statuses[i], i, highlight))
         : [emptyState(day)];
-      if (classes.length && highlight < 0) cards.push(el("p", "p1-muted", "That's all your classes for today. Good job!"));
+      if (classes.length && highlight < 0) {
+        const done = el("div", "p1-card");
+        done.append(el("p", "", "That's all your classes for today. Good job!"));
+        const next = nextUp();
+        if (next) done.append(next);
+        cards.push(done);
+      }
       list.replaceChildren(...cards);
     }
     if (countdown && shown) {
