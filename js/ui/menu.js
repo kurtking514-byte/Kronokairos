@@ -141,15 +141,14 @@ function buildClock() {
   const shadow = div("clock-shadow");
   const bob = div("clock-bob");
   const spin = div("clock-spin");
-  const rims = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => {
+  // Four rim slices give the thickness. (It was ten plus a back face with the logo, which never
+  // shows now that the clock only sways; every slice is a layer, and phones ran short of memory.)
+  const rims = [1, 2, 3, 4].map((i) => {
     const r = div("clock-rim");
-    r.style.transform = `translateZ(${-i * 1.6}px)`;
+    r.style.transform = `translateZ(${-i * 4}px)`;
     return r;
   });
-  const back = div("clock-back");
-  const logo = document.querySelector(".app-header .logo")?.cloneNode(true); // the KK logo on the back
-  if (logo) back.append(logo);
-  spin.append(...rims, back, sweep, ...rings, root);
+  spin.append(...rims, sweep, ...rings, root);
   bob.append(spin);
   box.append(glow, shadow, bob);
   return { box, hour, minute, second, moonLit };
@@ -190,16 +189,28 @@ function startClock(host) {
   stamp.append(date, side, moon);
   host.append(clock.box, stamp);
 
-  // Angles only ever grow, so the hands never spin backwards past 12.
-  let lastMinute = -1, lastS = -1, laps = 0;
+  // All three angles count up from the midnight before the page opened, so they only ever grow:
+  // no hand spins backwards at :00 or at 12. After a jump (the phone slept, the tab was hidden)
+  // the hands are set without their sweep, instead of spinning round many times to catch up.
+  const opened = new Date();
+  const midnight = new Date(opened.getFullYear(), opened.getMonth(), opened.getDate()).getTime();
+  let lastMinute = -1, lastT = -1;
   function tick() {
     const now = new Date();
-    const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
-    if (lastS >= 0 && s < lastS) laps++;
-    lastS = s;
-    clock.hour.style.transform = `rotate(${(h % 12) * 30 + m / 2}deg)`;
-    clock.minute.style.transform = `rotate(${m * 6 + s / 10}deg)`;
-    clock.second.style.transform = `rotate(${(laps * 60 + s) * 6}deg)`;
+    const h = now.getHours(), m = now.getMinutes();
+    // Whole days since then plus the wall-clock time today (so a daylight-saving change still reads right).
+    const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - midnight) / 86400000);
+    const t = days * 86400 + h * 3600 + m * 60 + now.getSeconds();
+    const jumped = lastT >= 0 && t - lastT > 2;
+    lastT = t;
+    if (jumped) clock.box.classList.remove("is-ticking");
+    clock.hour.style.transform = `rotate(${t / 120}deg)`;
+    clock.minute.style.transform = `rotate(${t / 10}deg)`;
+    clock.second.style.transform = `rotate(${t * 6}deg)`;
+    if (jumped) {
+      void clock.box.offsetWidth; // apply the new angles first, then bring the sweep back
+      clock.box.classList.add("is-ticking");
+    }
     if (m !== lastMinute) {
       lastMinute = m;
       const label = to12h(`${pad(h)}:${pad(m)}`);

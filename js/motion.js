@@ -25,13 +25,15 @@ export function applyMotion(value = getMotion()) {
 }
 
 // Page changes between screens: "circles" (the wobbly cover) or "slide" (no cover, just the glide).
+// Slide is the default: the blob is heavy on phones (a picture of the whole page, masked) and made
+// the owner dizzy. Anyone who picked the blob in Settings keeps it.
 const PAGE_KEY = "kronokairos.pageChange";
 
 export function getPageChange() {
   try {
-    return localStorage.getItem(PAGE_KEY) === "slide" ? "slide" : "circles";
+    return localStorage.getItem(PAGE_KEY) === "circles" ? "circles" : "slide";
   } catch {
-    return "circles";
+    return "slide";
   }
 }
 

@@ -70,9 +70,13 @@ t("no subjects gives a valid calendar with no events", () => {
   assert.equal(events(ics).length, 0);
   assert.ok(ics.startsWith("BEGIN:VCALENDAR\r\n"));
 });
-t("one VEVENT per subject", () => {
-  const ics = buildICS(stateWith([subj(), subj({ id: "b2", name: "English" }), subj({ id: "c3", name: "Sci" })]), NOW);
-  assert.equal(events(ics).length, 3);
+t("one VEVENT per class per weekday", () => {
+  const ics = buildICS(stateWith([subj(), subj({ id: "b2", name: "English", days: ["Tue"] }), subj({ id: "c3", name: "Sci", days: ["Mon", "Sat"] })]), NOW);
+  assert.equal(events(ics).length, 3 + 1 + 2);
+});
+t("each weekday event has its own UID", () => {
+  const uids = events(buildICS(stateWith(subj()), NOW)).map((ev) => prop(ev, "UID"));
+  assert.deepEqual(uids, ["abc123-MO@kronokairos", "abc123-WE@kronokairos", "abc123-FR@kronokairos"]);
 });
 t("every event has the required properties", () => {
   const ev = first(buildICS(stateWith(subj()), NOW));
@@ -86,15 +90,25 @@ t("buildICS does not change the state it is given", () => {
 });
 
 // ---------- recurrence and days ----------
-t("weekly RRULE with BYDAY from the subject's days", () => {
-  const rule = prop(first(buildICS(stateWith(subj()), NOW)), "RRULE");
-  assert.ok(rule.startsWith("FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL="), rule);
+// Google Calendar on Android keeps only the first day of BYDAY=MO,WE,FR, so each day is its own event.
+const bydays = (ics) => events(ics).map((ev) => /BYDAY=([A-Z,]+)/.exec(prop(ev, "RRULE"))[1]);
+t("a weekly RRULE with a single BYDAY per event", () => {
+  const evs = events(buildICS(stateWith(subj()), NOW));
+  assert.ok(prop(evs[0], "RRULE").startsWith("FREQ=WEEKLY;BYDAY=MO;UNTIL="), prop(evs[0], "RRULE"));
+  assert.deepEqual(bydays(buildICS(stateWith(subj()), NOW)), ["MO", "WE", "FR"]);
 });
-t("BYDAY covers all six days and is written in week order", () => {
+t("all six days become six events, in week order", () => {
   const all = subj({ days: ["Sat", "Fri", "Thu", "Wed", "Tue", "Mon"] });
-  assert.ok(prop(first(buildICS(stateWith(all), NOW)), "RRULE").includes("BYDAY=MO,TU,WE,TH,FR,SA;"));
-  const mixed = subj({ days: ["Sat", "Mon"] });
-  assert.ok(prop(first(buildICS(stateWith(mixed), NOW)), "RRULE").includes("BYDAY=MO,SA;"));
+  assert.deepEqual(bydays(buildICS(stateWith(all), NOW)), ["MO", "TU", "WE", "TH", "FR", "SA"]);
+  assert.deepEqual(bydays(buildICS(stateWith(subj({ days: ["Sat", "Mon"] })), NOW)), ["MO", "SA"]);
+});
+t("each weekday event starts on that weekday", () => {
+  const starts = events(buildICS(stateWith(subj()), NOW)).map((ev) => prop(ev, "DTSTART"));
+  assert.deepEqual(starts, ["20261026T073000", "20261028T073000", "20261030T073000"]);
+});
+t("every weekday event of a class ends the same term", () => {
+  const untils = events(buildICS(stateWith(subj()), NOW)).map((ev) => prop(ev, "RRULE").split("UNTIL=")[1]);
+  assert.deepEqual(untils, ["20270228T235959", "20270228T235959", "20270228T235959"]);
 });
 t("Sunday never appears: it is dropped, and a Sunday-only subject is skipped", () => {
   const ics = buildICS(stateWith([subj({ days: ["Mon", "Sun"] }), subj({ id: "s9", days: ["Sun"] })]), NOW);
@@ -116,7 +130,7 @@ t("DTSTART is the first matching day on or after now", () => {
   const wed = subj({ days: ["Wed", "Fri"] });
   assert.equal(prop(first(buildICS(stateWith(wed), NOW)), "DTSTART"), "20261028T073000");
   const sat = new Date(2026, 9, 31, 20, 0);
-  assert.equal(prop(first(buildICS(stateWith(subj({ days: ["Mon", "Sat"] }), {}), sat)), "DTSTART"), "20261031T073000");
+  assert.deepEqual(events(buildICS(stateWith(subj({ days: ["Mon", "Sat"] }), {}), sat)).map((ev) => prop(ev, "DTSTART")), ["20261102T073000", "20261031T073000"]);
   assert.equal(prop(first(buildICS(stateWith(subj({ days: ["Mon"] })), sat)), "DTSTART"), "20261102T073000");
 });
 t("DTSTART never lands on a Sunday", () => {
@@ -198,7 +212,7 @@ t("custom term without a date falls back to semester", () => {
   assert.equal(untilOf(stateWith(subj(), { termType: "custom", termEndDate: null })), "20270228T235959");
 });
 t("UNTIL is counted from each subject's own first class date", () => {
-  const s = stateWith([subj(), subj({ id: "w", days: ["Wed"] })]);
+  const s = stateWith([subj({ days: ["Mon"] }), subj({ id: "w", days: ["Wed"] })]);
   const [a, b] = events(buildICS(s, NOW)).map((ev) => prop(ev, "RRULE").split("UNTIL=")[1]);
   assert.equal(a, "20270228T235959");
   assert.equal(b, "20270302T235959");
@@ -217,7 +231,7 @@ t("the raw SUMMARY line in the file is SUMMARY:[Class] Math", () => {
   assert.ok(buildICS(stateWith(subj()), NOW).includes("\r\nSUMMARY:[Class] Math\r\n"));
 });
 t("every event gets the prefix, and alarm descriptions keep the plain subject name", () => {
-  const evs = events(buildICS(stateWith([subj(), subj({ id: "b2", name: "Sci" })]), NOW));
+  const evs = events(buildICS(stateWith([subj({ days: ["Mon"] }), subj({ id: "b2", name: "Sci", days: ["Mon"] })]), NOW));
   assert.deepEqual(evs.map((ev) => prop(ev, "SUMMARY")), ["[Class] Math", "[Class] Sci"]);
   assert.ok(evs[0].includes("DESCRIPTION:Math is starting"));
 });
@@ -277,7 +291,7 @@ t("a raw newline in a field can never create a new line in the file", () => {
 t("whitespace inside a link is removed from URL", () => {
   const ev = first(buildICS(stateWith(subj({ link: "https://example.test/j/1\nBEGIN:VEVENT" })), NOW));
   assert.ok(!prop(ev, "URL").includes("\n"));
-  assert.equal(events(buildICS(stateWith(subj({ link: "https://example.test/j/1\nBEGIN:VEVENT" })), NOW)).length, 1);
+  assert.equal(events(buildICS(stateWith(subj({ days: ["Mon"], link: "https://example.test/j/1\nBEGIN:VEVENT" })), NOW)).length, 1);
 });
 
 // ---------- folding ----------
@@ -313,8 +327,8 @@ t("folding counts octets, not characters, and never splits a multi-byte characte
 });
 
 // ---------- UID ----------
-t("UID is <subject-id>@kronokairos", () => {
-  assert.equal(prop(first(buildICS(stateWith(subj({ id: "k9z8y7" })), NOW)), "UID"), "k9z8y7@kronokairos");
+t("UID is <subject-id>-<weekday>@kronokairos", () => {
+  assert.equal(prop(first(buildICS(stateWith(subj({ id: "k9z8y7" })), NOW)), "UID"), "k9z8y7-MO@kronokairos");
 });
 t("UID stays the same across exports and edits to the subject", () => {
   const a = prop(first(buildICS(stateWith(subj()), NOW)), "UID");
@@ -323,7 +337,7 @@ t("UID stays the same across exports and edits to the subject", () => {
 });
 t("different subjects get different UIDs", () => {
   const uids = events(buildICS(stateWith([subj(), subj({ id: "zzz999" })]), NOW)).map((e) => prop(e, "UID"));
-  assert.equal(new Set(uids).size, 2);
+  assert.equal(new Set(uids).size, 6); // two classes on three days each
 });
 t("the same input and time give the same file", () => {
   const s = stateWith(subj());

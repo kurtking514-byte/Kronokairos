@@ -313,7 +313,8 @@ function currentLead(settings) {
 // Reads the numbers from the real file, so the screen cannot disagree with it.
 function previewCalendar(state) {
   const lines = buildICS(state, new Date()).replace(/\r\n[ \t]/g, "").split("\r\n");
-  const events = lines.filter((l) => l === "BEGIN:VEVENT").length;
+  // One event per class per weekday: count the classes (the UID is "<class id>-<day>@kronokairos").
+  const events = new Set(lines.filter((l) => l.startsWith("UID:")).map((l) => l.slice(4, l.lastIndexOf("-")))).size;
   let latest = null;
   for (const line of lines) {
     const m = /UNTIL=(\d{4})(\d{2})(\d{2})T/.exec(line);

@@ -87,6 +87,18 @@ function deal() {
   });
 }
 
+// Once the entrance has played, drop "screen-in": a screen that redraws itself in place (the class
+// form's − and + buttons, for one) would otherwise replay the entrance on every tap.
+let entrance = 0;
+function settleEntrance() {
+  const mine = ++entrance;
+  const finite = main.getAnimations({ subtree: true })
+    .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+  Promise.all(finite.map((a) => a.finished.catch(() => {}))).then(() => {
+    if (mine === entrance) main.classList.remove("screen-in");
+  });
+}
+
 let leaving = false;
 function go(name, from, after) {
   if (name === current) return after?.(); // already here: no transition
@@ -101,6 +113,7 @@ function go(name, from, after) {
     if (between) deal();
     void main.offsetWidth; // restart the entrance
     main.classList.add("screen-in");
+    settleEntrance();
     glide(els, before);
     after?.();
   };

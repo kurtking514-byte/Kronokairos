@@ -166,23 +166,28 @@ function descriptionText(subject, url) {
   return parts.join("\n");
 }
 
-// Returns the VEVENT lines, or null if the subject cannot make a valid event.
-// With a time zone, times are pinned to it (DTSTART;TZID=...) and UNTIL is in UTC, as the
-// standard requires; without one they are floating local times.
-function eventLines(state, subject, now, leads, tz) {
+// The class days a subject can be exported for, in week order (empty if it can't make an event).
+function exportDays(subject) {
   const days = DAYS.filter((d) => Array.isArray(subject.days) && subject.days.includes(d));
   const validTime = typeof subject.start === "string" && TIME_RE.test(subject.start);
-  if (!days.length || !validTime || !Number.isInteger(subject.minutes) || subject.minutes <= 0) {
-    return null;
-  }
+  return validTime && Number.isInteger(subject.minutes) && subject.minutes > 0 ? days : [];
+}
 
+// Returns the VEVENT lines for one class on one weekday, or null if it cannot make a valid event.
+// One event per weekday, not one with BYDAY=MO,WE,FR: Google Calendar on Android keeps only the
+// first weekday of a multi-day rule (owner report), and every calendar app reads a single day.
+// The term is still counted from the class's first meeting on any of its days.
+// With a time zone, times are pinned to it (DTSTART;TZID=...) and UNTIL is in UTC, as the
+// standard requires; without one they are floating local times.
+function eventLines(state, subject, day, now, leads, tz) {
+  const days = [day];
   const first = firstClassDate(days, now);
   const [h, m] = subject.start.split(":").map(Number);
   const dtstart = new Date(first.getFullYear(), first.getMonth(), first.getDate(), h, m);
   const dtend = new Date(first.getFullYear(), first.getMonth(), first.getDate(), h, m + subject.minutes);
 
   // A custom term end before the first class would give an invalid rule, so skip the subject.
-  const until = termEnd(state, first);
+  const until = termEnd(state, firstClassDate(exportDays(subject), now));
   if (until < dtstart) return null;
 
   const name = String(subject.name ?? "").trim() || "Class";
@@ -191,7 +196,7 @@ function eventLines(state, subject, now, leads, tz) {
 
   const lines = [
     "BEGIN:VEVENT",
-    `UID:${escapeText(subject.id)}@kronokairos`,
+    `UID:${escapeText(subject.id)}-${BYDAY[day]}@kronokairos`,
     `DTSTAMP:${utcStamp(now)}`,
     tz ? `DTSTART;TZID=${tz}:${floating(dtstart)}` : `DTSTART:${floating(dtstart)}`,
     tz ? `DTEND;TZID=${tz}:${floating(dtend)}` : `DTEND:${floating(dtend)}`,
@@ -226,8 +231,10 @@ export function buildICS(state, now = new Date(), timeZone = null) {
   const tz = zone ? timeZone : null; // a zone this browser can't describe: fall back to floating times
   if (zone) lines.push(...zone);
   for (const subject of state.subjects ?? []) {
-    const event = eventLines(state, subject, now, leads, tz);
-    if (event) lines.push(...event);
+    for (const day of exportDays(subject)) {
+      const event = eventLines(state, subject, day, now, leads, tz);
+      if (event) lines.push(...event);
+    }
   }
   lines.push("END:VCALENDAR");
   return lines.map(foldLine).join(CRLF) + CRLF;
@@ -238,6 +245,7 @@ export function buildICS(state, now = new Date(), timeZone = null) {
 // what went into the last download and compare, to tell the student when to download again.
 
 const CAL_KEY = "kronokairos.calendar"; // { key, subjects: [{ id, name }], at }
+const FILE_FORMAT = 2; // 2: one event per class per weekday (Google Calendar on Android needs it)
 
 // Everything that changes what the file says. Same fingerprint = same file.
 export function calendarFingerprint(state) {
@@ -245,7 +253,8 @@ export function calendarFingerprint(state) {
     .map(({ id, name, days, start, minutes, link, meetingId, passcode }) => [id, name, days, start, minutes, link, meetingId, passcode])
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   const { calendarLeadMinutes, termType, termEndDate } = state.settings ?? {};
-  return JSON.stringify([subjects, calendarLeadMinutes, termType, termEndDate]);
+  // FILE_FORMAT changes when the file itself changes, so older downloads count as out of date.
+  return JSON.stringify([FILE_FORMAT, subjects, calendarLeadMinutes, termType, termEndDate]);
 }
 
 // kind: "empty" (no classes), "never" (never downloaded), "current", or "stale".

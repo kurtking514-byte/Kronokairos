@@ -480,18 +480,6 @@ body[data-screen="menu"] .tabs, body[data-screen="menu"] .app-main { overflow-x:
 .clock-spin > .ring-layer { position: absolute; inset: 0; transform: translateZ(1px); will-change: transform; } /* drawn once, turned by the graphics card */
 .ring-layer > svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .clock-rim { position: absolute; inset: 6.6%; border-radius: 50%; background: var(--clock-face-out); border: 3px solid var(--primary); backface-visibility: visible !important; }
-.clock-back {
-  position: absolute;
-  inset: 6.6%;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--clock-face-in), var(--clock-face-out));
-  border: 3px solid var(--primary);
-  box-shadow: inset 0 0 0 10px var(--clock-ring);
-  transform: translateZ(-17px) rotateY(180deg);
-}
-.clock-back .logo { display: block; width: 74%; height: auto; } /* the KK mark, centred on the back face */
 .clock-shadow { position: absolute; left: 22%; right: 22%; bottom: -5%; height: 8%; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.45), transparent); animation: loot-shadow 3s ease-in-out infinite; }
 @keyframes loot-bob { 50% { translate: 0 -7%; } }
 @keyframes loot-sway { from { transform: rotateY(-20deg); } to { transform: rotateY(20deg); } }
