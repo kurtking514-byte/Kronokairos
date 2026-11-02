@@ -59,12 +59,16 @@ function buildClock() {
   defs.append(face);
   root.append(defs);
 
-  // The turning rings each get their own <svg>, and that whole element turns. Turning shapes inside
-  // one drawing made the browser redraw the whole clock face every frame, which made hovering the
-  // menu laggy; a separate element is drawn once and just rotated by the graphics card.
+  // The turning rings each get their own <svg> inside a plain <div>, and the div turns. Turning
+  // shapes inside one drawing made the browser redraw the whole clock face every frame, which made
+  // hovering the menu laggy. Chrome only hands a turning <div> to the graphics card (not an <svg>),
+  // so the ring is drawn once and just rotated.
   const ringLayer = (cls, ...parts) => {
-    const layer = svg("svg", { viewBox: "0 0 240 240", class: `ring-layer ${cls}`, "aria-hidden": "true" });
-    layer.append(...parts);
+    const layer = document.createElement("div");
+    layer.className = `ring-layer ${cls}`;
+    const drawing = svg("svg", { viewBox: "0 0 240 240", "aria-hidden": "true" });
+    drawing.append(...parts);
+    layer.append(drawing);
     return layer;
   };
 
@@ -87,7 +91,7 @@ function buildClock() {
     ringLayer("spin-chase", chase),
     ringLayer("spin-dots", dots),
   ];
-  rings[0].firstChild.append(textPath);
+  rings[0].querySelector("defs").append(textPath);
   root.append(svg("circle", { cx: C, cy: C, r: 88, class: "face", fill: "url(#menu-clock-face)" }));
   root.append(svg("circle", { cx: C, cy: C, r: 52, class: "face-line" }));
 
