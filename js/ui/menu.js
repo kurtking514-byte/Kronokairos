@@ -56,11 +56,21 @@ function buildClock() {
   const defs = svg("defs");
   const face = svg("radialGradient", { id: "menu-clock-face", cx: "50%", cy: "40%", r: "60%" });
   face.append(svg("stop", { offset: "0%", class: "face-stop-in" }), svg("stop", { offset: "100%", class: "face-stop-out" }));
-  defs.append(face, svg("path", { id: "menu-clock-text", d: `M ${C} ${C - 111} a 111 111 0 1 1 -0.01 0` }));
+  defs.append(face);
   root.append(defs);
+
+  // The turning rings each get their own <svg>, and that whole element turns. Turning shapes inside
+  // one drawing made the browser redraw the whole clock face every frame, which made hovering the
+  // menu laggy; a separate element is drawn once and just rotated by the graphics card.
+  const ringLayer = (cls, ...parts) => {
+    const layer = svg("svg", { viewBox: "0 0 240 240", class: `ring-layer ${cls}`, "aria-hidden": "true" });
+    layer.append(...parts);
+    return layer;
+  };
 
   // Outer ring of words, turning slowly.
   const words = svg("g", { class: "ring ring-text" });
+  const textPath = svg("path", { id: "menu-clock-text", d: `M ${C} ${C - 111} a 111 111 0 1 1 -0.01 0` });
   const text = svg("text", { class: "ring-words" });
   const tp = svg("textPath", { href: "#menu-clock-text", textLength: 690, lengthAdjust: "spacing" });
   tp.textContent = "KRONOKAIROS ✦ TIME WAITS FOR NO ONE ✦ KRONOKAIROS ✦ TIME WAITS FOR NO ONE ✦";
@@ -71,7 +81,14 @@ function buildClock() {
   const seg = svg("circle", { cx: C, cy: C, r: 100, class: "ring ring-seg" });
   const chase = svg("circle", { cx: C, cy: C, r: 100, class: "ring ring-chase" });
   const dots = svg("circle", { cx: C, cy: C, r: 93, class: "ring ring-dots" });
-  root.append(words, seg, chase, dots, svg("circle", { cx: C, cy: C, r: 88, class: "face", fill: "url(#menu-clock-face)" }));
+  const rings = [
+    ringLayer("spin-text", svg("defs", {}), words),
+    ringLayer("spin-seg", seg),
+    ringLayer("spin-chase", chase),
+    ringLayer("spin-dots", dots),
+  ];
+  rings[0].firstChild.append(textPath);
+  root.append(svg("circle", { cx: C, cy: C, r: 88, class: "face", fill: "url(#menu-clock-face)" }));
   root.append(svg("circle", { cx: C, cy: C, r: 52, class: "face-line" }));
 
   // Minute ticks, slanted hour blocks, and four big numerals.
@@ -128,7 +145,7 @@ function buildClock() {
   const back = div("clock-back");
   const logo = document.querySelector(".app-header .logo")?.cloneNode(true); // the KK logo on the back
   if (logo) back.append(logo);
-  spin.append(...rims, back, sweep, root);
+  spin.append(...rims, back, sweep, ...rings, root);
   bob.append(spin);
   box.append(glow, shadow, bob);
   return { box, hour, minute, second, moonLit };

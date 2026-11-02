@@ -474,6 +474,7 @@ body[data-screen="menu"] .tabs, body[data-screen="menu"] .app-main { overflow-x:
 .clock-spin { position: absolute; inset: 0; transform-style: preserve-3d; animation: loot-sway 3s ease-in-out infinite alternate; }
 .clock-spin > * { backface-visibility: hidden; }
 .clock-spin > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; transform: translateZ(1px); }
+.clock-spin > .ring-layer { will-change: transform; } /* drawn once, turned by the graphics card */
 .clock-rim { position: absolute; inset: 6.6%; border-radius: 50%; background: var(--clock-face-out); border: 3px solid var(--primary); backface-visibility: visible !important; }
 .clock-back {
   position: absolute;
@@ -502,12 +503,15 @@ body[data-screen="menu"] .tabs, body[data-screen="menu"] .app-main { overflow-x:
   z-index: 0; /* under the drawing; shows through the see-through face */
   pointer-events: none;
 }
-.menu-clock .ring { fill: none; transform-origin: 120px 120px; }
+.menu-clock .ring { fill: none; }
 .menu-clock .ring-words { fill: var(--menu-ink); font-family: var(--display); font-style: italic; font-weight: 600; font-size: 10.5px; letter-spacing: 0.08em; opacity: 0.85; }
-.menu-clock .ring-text { animation: menu-spin 70s linear infinite; }
-.menu-clock .ring-seg { stroke: var(--clock-ring); stroke-width: 7; stroke-dasharray: 44.36 8; animation: menu-spin 40s linear infinite reverse; }
-.menu-clock .ring-chase { stroke: var(--primary); stroke-width: 7; stroke-dasharray: 44.36 583.96; animation: menu-spin 3.6s linear infinite; filter: drop-shadow(0 0 4px var(--primary)); }
-.menu-clock .ring-dots { stroke: var(--clock-ring); stroke-width: 1.5; stroke-dasharray: 1 4.84; animation: menu-spin 90s linear infinite; }
+.menu-clock .ring-seg { stroke: var(--clock-ring); stroke-width: 7; stroke-dasharray: 44.36 8; }
+.menu-clock .ring-chase { stroke: var(--primary); stroke-width: 7; stroke-dasharray: 44.36 583.96; filter: drop-shadow(0 0 4px var(--primary)); }
+.menu-clock .ring-dots { stroke: var(--clock-ring); stroke-width: 1.5; stroke-dasharray: 1 4.84; }
+.menu-clock .spin-text { animation: menu-spin 70s linear infinite; }
+.menu-clock .spin-seg { animation: menu-spin 40s linear infinite reverse; }
+.menu-clock .spin-chase { animation: menu-spin 3.6s linear infinite; }
+.menu-clock .spin-dots { animation: menu-spin 90s linear infinite; }
 .menu-clock .face { stroke: var(--primary); stroke-width: 1.5; }
 .menu-clock .face-stop-in { stop-color: var(--clock-face-in); stop-opacity: 0.6; }
 .menu-clock .face-stop-out { stop-color: var(--clock-face-out); stop-opacity: 0.85; }
@@ -1273,8 +1277,8 @@ a.alarm-join { min-height: 64px; font-size: 1.5rem; }
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion="full"]) * { animation: none !important; transition: none !important; }
   /* The menu clock's rings and sweep still turn, very slowly, so the clock doesn't look frozen. */
-  :root:not([data-motion="full"]) .menu-clock .ring-text { animation: menu-spin 240s linear infinite !important; }
-  :root:not([data-motion="full"]) .menu-clock .ring-seg { animation: menu-spin 180s linear infinite reverse !important; }
+  :root:not([data-motion="full"]) .menu-clock .spin-text { animation: menu-spin 240s linear infinite !important; }
+  :root:not([data-motion="full"]) .menu-clock .spin-seg { animation: menu-spin 180s linear infinite reverse !important; }
   :root:not([data-motion="full"]) .clock-sweep { animation: menu-spin 60s linear infinite !important; }
   /* The Settings highlight still slides (short and sideways); without it the pick just jumps. */
   :root:not([data-motion="full"]) .cal-lit.is-moving { transition: clip-path 0.32s cubic-bezier(0.22, 1, 0.36, 1) !important; }

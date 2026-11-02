@@ -2,7 +2,7 @@
 // To ship an update: change a file, then change CACHE_VERSION below. Old caches are deleted.
 // Every path is relative, so this works in a GitHub Pages subfolder.
 
-const CACHE_VERSION = "v34";
+const CACHE_VERSION = "v35";
 const CACHE = `kronokairos-${CACHE_VERSION}`;
 
 // Every file the app needs. If you add a file to the project, add it here too.
