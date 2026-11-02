@@ -310,7 +310,7 @@ function paint(box) {
         : h("button", { type: "button", text: "Start alarms", onclick: () => onStart(box) }),
       h("button", { type: "button", class: "secondary", text: "Test alarm", onclick: () => onTest(box) })),
     h("p", { class: "alarm-note", text: "The page must stay open. For alarms when the page is closed, use Add to my calendar." }),
-    hasSound ? null : h("p", { class: "alarm-note", text: "This browser can't play the alarm sound. The popup will still appear." }),
+    ...(hasSound ? [] : [h("p", { class: "alarm-note", text: "This browser can't play the alarm sound. The popup will still appear." })]),
   );
 }
 

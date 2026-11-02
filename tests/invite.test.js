@@ -32,10 +32,10 @@ t("only a link: meeting ID comes from the link", () => {
 });
 t("passcode keeps upper and lower case exactly", () => assert.equal(parseInvite("Passcode: aBcD1l0O").passcode, "aBcD1l0O"));
 t("11-digit and 10-digit IDs with spaces", () => {
-  assert.equal(parseInvite("Meeting ID: 771 2426 4687").meetingId, "77124264687");
-  assert.equal(parseInvite("Meeting ID: 868 602 8919").meetingId, "8686028919");
+  assert.equal(parseInvite("Meeting ID: 111 2222 3333").meetingId, "11122223333");
+  assert.equal(parseInvite("Meeting ID: 444 555 6666").meetingId, "4445556666");
 });
-t("a 12-digit meeting ID is rejected", () => assert.equal(parseInvite("Meeting ID: 788 0642 5425 4").meetingId, null));
+t("a 12-digit meeting ID is rejected", () => assert.equal(parseInvite("Meeting ID: 777 8888 9999 4").meetingId, null));
 t("link broken over two lines is glued back together", () => {
   const r = parseInvite("https://us04web.zoom.us/j/123456789?\npwd=FakePwd1x\nMeeting ID: 123 456 789");
   assert.equal(r.link, "https://us04web.zoom.us/j/123456789?pwd=FakePwd1x");

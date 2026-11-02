@@ -8,8 +8,18 @@ Your schedule stays in this browser on this device; Kronokairos does not upload 
 
 Page alarms work only while the page is open and the device is awake. Calendar alarms depend on your calendar app. The site works offline after its first visit.
 
+## Run locally
+
+In this folder, run `python -m http.server 8000`, then open http://localhost:8000.
+
+Run the tests with `node tests/run.js` (Node.js LTS).
+
 ## Publish with GitHub Pages
 
 Upload the project files to a GitHub repository, keeping the `js`, `css`, and `icons` folders intact. In **Settings → Pages**, choose **Deploy from a branch**, select `main` and `/(root)`, then save.
 
 The site address will be `https://<username>.github.io/<repository>/`.
+
+## Updating the site
+
+Change the files, then bump `CACHE_VERSION` in `sw.js` so installed copies pick up the new version. Push to `main` and Pages redeploys in a minute or two.
