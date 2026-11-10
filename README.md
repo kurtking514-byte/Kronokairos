@@ -2,7 +2,7 @@
 
 **Never miss an online class.** Kronokairos is a free class-schedule app for students with online classes. It keeps each class's Zoom link and passcode in one place, rings before class starts, and gets you into the meeting with one tap.
 
-**Open it:** https://kurtking514-byte.github.io/Kronokairos/ (short link to share: https://tinyurl.com/kronokairos)
+**Open it:** https://kronokairos.kurtking.site (short link to share: https://tinyurl.com/kronokairos)
 
 It runs in any modern browser on a phone or computer. There's no sign-up and no account, and your schedule stays on your device.
 
